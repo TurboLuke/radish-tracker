@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
+import { Redis } from '@upstash/redis';
 
-const DATA_FILE = path.join(process.cwd(), 'data', 'sightings.json');
+const redis = Redis.fromEnv(); // reads KV_REST_API_URL + KV_REST_API_TOKEN automatically
 
-// Rennes bounding box (rough) — keep pins in/near Rennes
+const SIGHTINGS_KEY = 'radis:sightings';
+
 const RENNES_BOUNDS = {
   minLat: 48.05,
   maxLat: 48.20,
@@ -21,23 +21,10 @@ type Sighting = {
   createdAt: string;
 };
 
-async function readSightings(): Promise<{ sightings: Sighting[] }> {
-  try {
-    const raw = await fs.readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return { sightings: [] };
-  }
-}
-
-async function writeSightings(data: { sightings: Sighting[] }) {
-  await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-}
-
 export async function GET() {
-  const data = await readSightings();
-  return NextResponse.json(data);
+  // lrange 0 -1 = get all items in the list
+  const items = await redis.lrange<Sighting>(SIGHTINGS_KEY, 0, -1);
+  return NextResponse.json({ sightings: items });
 }
 
 export async function POST(req: NextRequest) {
@@ -61,7 +48,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const data = await readSightings();
     const sighting: Sighting = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       lat,
@@ -71,11 +57,12 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    data.sightings.push(sighting);
-    await writeSightings(data);
+    // rpush = append to the end of the list
+    await redis.rpush(SIGHTINGS_KEY, sighting);
 
     return NextResponse.json({ sighting });
   } catch (e) {
+    console.error(e);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
   }
 }

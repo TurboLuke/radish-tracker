@@ -37,16 +37,44 @@ data/
   sightings.json           # Your "database"
 ```
 
-## Deployment notes
+## Deployment (Vercel + Upstash Redis, free)
 
-The JSON file approach works locally and on a single long-running Node server (e.g. a small VPS, Railway, Render, Fly.io). 
+This project now uses **Upstash Redis** as its database — it's free for small apps and integrates with Vercel in one click.
 
-⚠️ **Vercel / Netlify won't persist the JSON file** between deploys (and serverless functions have read-only filesystems). If you deploy there, swap the file I/O in `app/api/sightings/route.ts` for a small KV store like:
-- **Vercel KV** / **Upstash Redis** (free tier works fine)
-- **Turso** / **Neon** (SQLite/Postgres)
-- A **GitHub Gist** as a poor-man's database
+### Steps
 
-The data shape is so small that any of these is a 10-line swap.
+1. **Push this repo to GitHub.**
+2. **Import it in Vercel** (vercel.com → Add New → Project → pick your repo).
+3. On first deploy you'll get build errors until you add a database — that's expected.
+4. In the Vercel dashboard, go to your project → **Storage** tab → **Create Database** → **Upstash → Redis** → pick the free plan.
+5. Vercel automatically injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` into your project's environment variables.
+6. **Redeploy** (the Deployments tab → "…" → Redeploy). Done.
+
+### Local development
+
+Copy `.env.local.example` to `.env.local` and fill in the values from your Upstash dashboard (Upstash → your DB → REST API tab). Then:
+
+```bash
+npm install
+npm run dev
+```
+
+### How the storage works
+
+The API uses a single Redis list at the key `radis:sightings`:
+- `GET /api/sightings` → `LRANGE 0 -1` returns all pins
+- `POST /api/sightings` → `RPUSH` appends a new pin
+
+The Upstash free tier gives you 500,000 commands/month and 256 MB, which is thousands of radishes before you'd ever worry.
+
+### Other options
+
+If you prefer a real database with a UI:
+- **Neon** (Postgres, free tier) — good if you want to browse/edit rows in a web UI
+- **Turso** (SQLite at the edge, free tier) — nice if you like SQL
+- **Supabase** (Postgres + dashboard, free tier) — same, with more batteries included
+
+All three are available in the Vercel Marketplace with the same one-click integration.
 
 ## Customizing
 
